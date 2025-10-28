@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Coffee Machine WebGL - Lighting + Texture</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    /* ====== Base layout ====== */
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; display:flex; height:100vh; color:#0f172a; }
+    #ui {
+      width:300px; padding:16px; background:#f8fafc; /* slate-50 */
+      box-shadow: 2px 0 10px rgba(15,23,42,0.08);
+      overflow-y:auto; border-right:1px solid #e5e7eb; /* gray-200 */
+    }
+    #canvas-wrap { flex:1; display:flex; align-items:center; justify-content:center; position:relative; background:radial-gradient(900px 450px at 70% -10%,rgba(14,165,233,.08),transparent 60%); }
+    canvas { background:#fff; border:1px solid #e5e7eb; border-radius:12px; }
+    h3 { margin:0 0 8px; font-weight:700; letter-spacing:.2px }
+    h4 { margin:14px 0 8px; font-size:13px; font-weight:700; color:#334155; border-bottom:1px dashed #e5e7eb; padding-bottom:6px; }
+    label { display:block; margin-top:8px; font-size:13px; }
+    input[type=range] { width:100%; }
+    input[type=color] { width:100%; height:32px; padding:2px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; }
+    select { width:100%; padding:8px; margin-top:4px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; }
+    button { margin-top:8px; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#0ea5e9; color:#fff; cursor:pointer; font-weight:600; }
+    button.secondary { background:#fff; color:#0f172a; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px; box-shadow:0 1px 2px rgba(2,6,23,0.03); margin-bottom:12px; }
+    .muted { color:#64748b; font-size:12px; }
+    .chip { display:inline-block; padding:.15rem .5rem; border:1px solid #e5e7eb; border-radius:999px; background:#fff; font-size:12px; color:#334155 }
+    .accent { color:#0ea5e9 }
+    .ok { color:#16a34a }
+
+    /* ====== Member badge ====== */
+    #nama-anggota {
+      position:absolute; top:10px; right:10px;
+      background:rgba(255,255,255,0.9);
+      padding:8px 12px; border-radius:10px; font-size:13px;
+      border:1px solid #e5e7eb; box-shadow:0 2px 8px rgba(2,6,23,0.08);
+    }
+    #nama-anggota ul { margin:0; padding:0; list-style:none; }
+    #nama-anggota li { margin:2px 0; }
+
+    /* ====== Nice tree view for hierarchy ====== */
+    .tree { --line:#e5e7eb; --dot:#64748b; margin:6px 0 0 0; padding-left:8px; }
+    .tree ul { list-style:none; margin:0; padding-left:14px; border-left:1px dashed var(--line); }
+    .tree li { position:relative; padding:6px 0 6px 14px; }
+    .tree li::before {
+      content:""; position:absolute; left:-1px; top:16px; width:12px; height:1px; background:var(--line);
+    }
+    .tree .node { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border:1px solid #e5e7eb; border-radius:999px; background:#f8fafc; }
+    .tree .dot { width:8px; height:8px; border-radius:999px; background:var(--dot); }
+    .tree .note { margin-left:8px; font-size:12px; color:#64748b; }
+
+    /* ====== Responsibilities table ====== */
+    table.roles { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+    .roles th, .roles td { padding:8px 10px; border-bottom:1px solid #e5e7eb; vertical-align:top; }
+    .roles th { text-align:left; color:#334155; background:#f8fafc; position:sticky; top:0; }
+    .roles tr:last-child td { border-bottom:0; }
+    .tag { display:inline-block; padding:2px 6px; border:1px solid #bae6fd; color:#0369a1; background:#e0f2fe; border-radius:999px; font-size:11px; margin-right:4px; }
+    .tag.dark { border-color:#fde68a; color:#92400e; background:#fef3c7; }
+    .tag.gray { border-color:#cbd5e1; color:#334155; background:#f1f5f9; }
+
+    @media (max-width: 920px) {
+      body { flex-direction:column; }
+      #ui { width:100%; height:48vh; }
+      #canvas-wrap { height:52vh; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="ui">
+    <h3>Coffee Machine <span class="chip">WebGL2</span></h3>
+
+    <div class="card">
+      <h4>Object Transform (Scene)</h4>
+      <label>Rotate X <input id="rx" type="range" min="-180" max="180" value="20"></label>
+      <label>Rotate Y <input id="ry" type="range" min="-180" max="180" value="-20"></label>
+      <label>Rotate Z <input id="rz" type="range" min="-180" max="180" value="0"></label>
+      <label>Scale <input id="scale" type="range" min="0.3" max="2" step="0.01" value="1"></label>
+      <label>Translate Y <input id="ty" type="range" min="-1.5" max="1.5" step="0.01" value="0"></label>
+      <div class="row">
+        <button id="toggle-anim">Auto-Rotate</button>
+        <button id="reset" class="secondary">Reset</button>
+      </div>
+      <p class="muted">Transform di sini berlaku ke seluruh scene.</p>
+    </div>
+
+    <div class="card">
+      <h4>Camera</h4>
+      <label>Camera X <input id="camX" type="range" min="-10" max="10" step="0.1" value="0"></label>
+      <label>Camera Y <input id="camY" type="range" min="-10" max="10" step="0.1" value="2"></label>
+      <label>Camera Z <input id="camZ" type="range" min="-10" max="10" step="0.1" value="5"></label>
+
+      <label>Projection Type
+        <select id="projType">
+          <option value="perspective" selected>Perspective</option>
+          <option value="orthographic">Orthographic</option>
+        </select>
+      </label>
+      <label id="fovy-label">Field of View <input id="fovy" type="range" min="10" max="120" value="45"></label>
+    </div>
+
+    <div class="card">
+      <h4>Hierarchy — Table/Stand <span class="chip accent">Parent of all</span></h4>
+      <label>Stand X <input id="standX" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <label>Stand Y <input id="standY" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <label>Stand Z <input id="standZ" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <p class="muted">Memindahkan table ⇒ seluruh anak ikut (machine, coffee, cup).</p>
+    </div>
+
+    <div class="card">
+      <h4>Hierarchy — Machine (child of Table)</h4>
+      <label>Machine X <input id="machX" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <label>Machine Y <input id="machY" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <label>Machine Z <input id="machZ" type="range" min="-2" max="2" step="0.01" value="0"></label>
+    </div>
+
+    <div class="card">
+      <h4>Hierarchy — Cup (child of Machine)</h4>
+      <label>Cup X <input id="cupX" type="range" min="-1" max="1" step="0.01" value="0"></label>
+      <label>Cup Y <input id="cupY" type="range" min="-1" max="1" step="0.01" value="-0.20"></label>
+      <label>Cup Z <input id="cupZ" type="range" min="-1" max="1" step="0.01" value="0"></label>
+      <p class="muted">Cup D: <span class="chip">black plastic</span> + rim <span class="chip">yellow</span>/<span class="chip">white</span>, tanpa tutup.</p>
+    </div>
+
+    <div class="card">
+      <h4>Lighting</h4>
+      <label>Light X <input id="lightX" type="range" min="-10" max="10" step="0.1" value="3"></label>
+      <label>Light Y <input id="lightY" type="range" min="-10" max="10" step="0.1" value="4"></label>
+      <label>Light Z <input id="lightZ" type="range" min="-10" max="10" step="0.1" value="4"></label>
+      <label>Ambient Color <input id="ambientColor" type="color" value="#202020"></label>
+      <label>Diffuse Color <input id="diffuseColor" type="color" value="#ffffff"></label>
+      <label>Specular Color <input id="specularColor" type="color" value="#ffffff"></label>
+      <p class="muted">Model Phong dengan optional texture.</p>
+    </div>
+
+    <div class="card">
+      <h4>Texture</h4>
+      <label>Use Image Texture <input id="useImageTex" type="checkbox"></label>
+      <p class="muted">Unchecked = procedural checkerboard. Checked = <code>images.webp</code> jika termuat.</p>
+    </div>
+
+    <!-- ====== NEW: Object hierarchy visual ====== -->
+    <div class="card">
+      <h4>Object Hierarchy (Scene Graph)</h4>
+      <div class="tree">
+        <ul>
+          <li>
+            <span class="node"><span class="dot"></span><strong>Root (Scene)</strong></span>
+            <span class="note">Rotate/Scale/Translate global</span>
+            <ul>
+              <li>
+                <span class="node"><span class="dot"></span><strong>Table / Stand</strong></span>
+                <span class="note">Parent semua objek</span>
+                <ul>
+                  <li>
+                    <span class="node"><span class="dot"></span><strong>Machine</strong></span>
+                    <span class="note">Anak Table</span>
+                    <ul>
+                      <li><span class="node"><span class="dot"></span> Coffee (animated drop)</span></li>
+                      <li><span class="node"><span class="dot"></span> Cup D (black + yellow/white rim)</span></li>
+                    </ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+      <p class="muted">Urutan matriks: <code>Root → Table → Machine → (Coffee/Cup)</code>.  
+      Slider <em>Table</em> memengaruhi semua turunannya; <em>Machine</em> memengaruhi Coffee & Cup; Coffee punya animasi jatuh di ruang Machine.</p>
+    </div>
+
+    <!-- ====== NEW: Responsibilities ====== -->
+    <div class="card">
+      <h4>Pembagian Tugas</h4>
+      <table class="roles">
+        <thead>
+          <tr>
+            <th style="width:38%">Anggota</th>
+            <th>Tanggung Jawab Utama</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>5025231205 — Muhammad Risyad Himawan Putra</strong></td>
+            <td>
+              <div class="muted">Modelling Machine</div>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>5025231210 — Yahya Ayyash Ashdaqi</strong></td>
+            <td>
+              <div class="muted">Modelling cup dan animasi kopi</div>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>5025231117 — Aryaka Leorgi Epridaka</strong></td>
+            <td>
+              <div class="muted">Modelling Table</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="gl-canvas" width="960" height="640"></canvas>
+    <div id="nama-anggota">
+      <strong>Anggota</strong>
+      <ul>
+        <li>5025231205 - Muhammad Risyad Himawan Putra</li>
+        <li>5025231210 - Yahya Ayyash Ashdaqi</li>
+        <li>5025231117 - Aryaka Leorgi Epridaka</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ======================= VERTEX SHADER ======================= -->
+  <script id="vertex-shader" type="x-shader/x-vertex">
+  #version 300 es
+  in vec4 aPosition;
+  in vec3 aNormal;
+  in vec3 aColor;
+  in vec2 aTexCoord;
+
+  uniform mat4 uModelViewMatrix;
+  uniform mat4 uProjectionMatrix;
+  uniform mat3 uNormalMatrix;
+  uniform vec4 uLightPosition;
+
+  out vec3 vNormal, vLight, vEye;
+  out vec3 vColor;
+  out vec2 vTexCoord;
+
+  void main() {
+    vec3 pos = (uModelViewMatrix * aPosition).xyz;
+    vLight = normalize(uLightPosition.xyz - pos);
+    vEye = normalize(-pos);
+    vNormal = normalize(uNormalMatrix * aNormal);
+    vColor = aColor;
+    vTexCoord = aTexCoord;
+    gl_Position = uProjectionMatrix * uModelViewMatrix * aPosition;
+  }
+  </script>
+
+  <!-- ======================= FRAGMENT SHADER ======================= -->
+  <script id="fragment-shader" type="x-shader/x-fragment">
+  #version 300 es
+  precision mediump float;
+
+  in vec3 vNormal, vLight, vEye;
+  in vec3 vColor;
+  in vec2 vTexCoord;
+
+  uniform vec3 uAmbientColor;
+  uniform vec3 uDiffuseColor;
+  uniform vec3 uSpecularColor;
+  uniform sampler2D uTexture;
+  uniform int uUseTexture;
+
+  out vec4 fColor;
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    vec3 L = normalize(vLight);
+    vec3 E = normalize(vEye); 
+    vec3 H = normalize(L + E);
+
+    float shininess = 600.0;
+    float diff = max(dot(L, N), 0.0);
+    float spec = pow(max(dot(H, N), 0.0), shininess);
+    if (dot(L, N) < 0.0) spec = 0.0;
+
+    vec3 ambient = uAmbientColor * vColor;
+    vec3 diffuse = uDiffuseColor * diff * vColor;
+    vec3 specular = uSpecularColor * spec;
+    vec3 lighting = ambient + diffuse + specular;
+
+    vec4 texColor = texture(uTexture, vTexCoord);
+    fColor = (uUseTexture == 1)
+      ? vec4(lighting, 1.0) * texColor
+      : vec4(lighting, 1.0);
+  }
+  </script>
+
+  <!-- ======================= JS Dependencies ======================= -->
+  <script src="initShaders.js"></script>
+  <script src="MVnew.js"></script>
+  <script src="coffeemachine.js"></script>
+</body>
+</html>
